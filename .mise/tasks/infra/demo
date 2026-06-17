@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+#MISE description="Trigger a demo failure scenario (db|cache|auth|frontend|all|recover)"
+set -euo pipefail
+
+SCENARIO="${1:-}"
+
+if [[ -z "$SCENARIO" ]]; then
+  echo "Usage: mise run infra:demo -- <scenario>"
+  echo ""
+  echo "Scenarios:"
+  echo "  db        — trigger pgsql failure (cascades to app-api + gateway)"
+  echo "  cache     — trigger redis failure (eviction storm scenario)"
+  echo "  auth      — trigger auth failure"
+  echo "  frontend  — trigger app-ui failure"
+  echo "  api-oom   — trigger app-api crash (no runbook — agent must reason from scratch)"
+  echo "  all       — trigger all services simultaneously"
+  echo "  recover   — recover all services"
+  echo ""
+  echo "Example:"
+  echo "  mise run infra:demo -- db"
+  echo "  # Wait 30s for vmalert to fire"
+  echo "  # Watch Argus correlate pgsql + app-api + gateway alerts"
+  echo "  # See root cause identified as pgsql"
+  echo "  mise run infra:demo -- recover"
+  exit 1
+fi
+
+case "$SCENARIO" in
+  db)
+    echo "💥 Triggering database failure cascade…"
+    echo "   pgsql → app-api → gateway cascade in ~30s"
+    echo "   Watch Argus identify pgsql as root cause"
+    curl -sf -X POST http://localhost:8085/fail || echo "  ⚠ pgsql not reachable"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  cache)
+    echo "💥 Triggering Redis eviction storm…"
+    echo "   redis → app-api latency → pgsql pool exhaustion in ~30s"
+    echo "   Watch Argus identify redis as root cause"
+    curl -sf -X POST http://localhost:8086/fail || echo "  ⚠ redis not reachable"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  auth)
+    echo "💥 Triggering auth outage…"
+    echo "   auth → app-api 401s → gateway errors in ~30s"
+    echo "   Watch Argus identify auth as root cause"
+    curl -sf -X POST http://localhost:8084/fail || echo "  ⚠ auth not reachable"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  frontend)
+    echo "💥 Triggering frontend failure…"
+    echo "   app-ui error rate elevated in ~30s"
+    echo "   Watch Argus flag frontend degradation"
+    curl -sf -X POST http://localhost:8082/fail || echo "  ⚠ app-ui not reachable"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  api-oom)
+    echo "💥 Triggering app-api OOM crash…"
+    echo "   app-api process fails directly — no upstream cause"
+    echo "   gateway downstream errors appear in ~30s"
+    echo "   No runbook covers this: agent must reason from first principles"
+    curl -sf -X POST http://localhost:8083/fail || echo "  ⚠ app-api not reachable"
+    echo ""
+    echo "   What to watch:"
+    echo "   • Agent searches runbooks → finds app-api.yaml (upstream-only patterns)"
+    echo "   • Checks auth/pgsql/redis → all healthy → no runbook match"
+    echo "   • Agent reasons independently and proposes remediation"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  all)
+    echo "💥 Triggering all services to fail…"
+    echo "   Full-stack outage in ~30s"
+    echo "   Watch Argus triage multiple simultaneous incidents"
+    for port in 8081 8082 8083 8084 8085 8086; do
+      curl -sf -X POST "http://localhost:${port}/fail" || echo "  ⚠ :${port} not reachable"
+    done
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  recover)
+    echo "✅ Recovering all services…"
+    for port in 8081 8082 8083 8084 8085 8086; do
+      curl -sf -X POST "http://localhost:${port}/recover" || echo "  ⚠ :${port} not reachable"
+    done
+    echo "   All services recovering — alerts will clear in ~60s"
+    echo ""
+    echo "   VictoriaMetrics: http://localhost:8428/vmui"
+    echo "   Argus UI:        http://localhost:5173"
+    ;;
+  *)
+    echo "Unknown scenario: $SCENARIO"
+    echo "Valid options: db, cache, auth, frontend, api-oom, all, recover"
+    exit 1
+    ;;
+esac

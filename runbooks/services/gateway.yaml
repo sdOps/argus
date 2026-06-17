@@ -1,0 +1,64 @@
+service: gateway
+tier: gateway
+description: >
+  nginx/envoy gateway tier handling inbound traffic routing
+  to app-ui and app-api services.
+
+triggers:
+  - pattern: "upstream error"
+    metric: gateway_upstream_error_rate
+    threshold: 0.50
+  - pattern: "high latency"
+    metric: gateway_latency_p99_ms
+    threshold: 1000
+  - pattern: "error rate spike"
+    metric: gateway_upstream_error_rate
+    threshold: 0.30
+
+steps:
+  - id: 1
+    title: Check upstream services
+    action: manual
+    instruction: >
+      Check gateway_upstream_error_rate. If above 0.30,
+      upstream services (app-ui, app-api) are likely failing.
+      Correlate with app-api and app-ui alerts.
+
+  - id: 2
+    title: Check latency breakdown
+    action: manual
+    instruction: >
+      If gateway_latency_p99_ms > 1000, determine if latency
+      is from upstream services or the gateway itself.
+      High latency with normal upstream error rates suggests
+      gateway-level issues (connection pool, DNS resolution).
+
+  - id: 3
+    title: Restart gateway container
+    action: executable
+    command: "docker compose restart gateway"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps gateway"
+
+  - id: 4
+    title: Escalate to platform engineering
+    action: notify
+    channel: "#platform-engineering"
+    condition: "if steps 1-3 did not resolve within 15 minutes"
+
+related_runbooks:
+  - app-api.yaml
+  - app-ui.yaml
+
+known_patterns:
+  - name: "Database failure cascade"
+    description: >
+      pgsql failure causes app-api dependency errors, which causes
+      gateway upstream errors. Root cause is pgsql, not gateway.
+    root_cause: pgsql
+
+  - name: "Auth outage cascade"
+    description: >
+      auth failure causes app-api 401 responses, which causes
+      gateway upstream errors. Root cause is auth, not gateway.
+    root_cause: auth

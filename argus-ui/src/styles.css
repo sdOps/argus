@@ -1,0 +1,332 @@
+@import "tailwindcss";
+
+@theme {
+  /*
+   * Apple system dark palette
+   * Surfaces follow macOS / iOS layering:
+   *   bg        = window background (systemBackground)
+   *   bg-elev   = secondarySystemBackground (cards on the window)
+   *   bg-elev-2 = tertiarySystemBackground (inputs / inset rows)
+   *   bg-hover  = quaternary fill (hover / pressed)
+   * Text follows the labelColor opacity hierarchy.
+   * Accents are the system palette (Blue / Green / Orange / Red / Purple).
+   */
+  --color-bg:            #1c1c1e;   /* systemBackground (dark) */
+  --color-bg-sidebar:    #242426;   /* sidebar slightly lifted */
+  --color-bg-elev:       #2c2c2e;   /* secondarySystem */
+  --color-bg-elev-2:     #3a3a3c;   /* tertiarySystem */
+  --color-bg-hover:      #44444a;   /* quaternary */
+  --color-line:          #38383a;   /* separator */
+  --color-line-strong:   #48484a;   /* opaqueSeparator */
+
+  --color-text:          #f5f5f7;   /* primary label */
+  --color-text-2:        #aeaeb2;   /* secondary label (~60%) */
+  --color-text-3:        #8e8e93;   /* tertiary label (~30%) */
+  --color-text-4:        #636366;   /* quaternary label */
+
+  --color-accent:        #0a84ff;   /* system Blue (dark) */
+  --color-accent-soft:   rgba(10, 132, 255, 0.16);
+  --color-accent-hover:  #409cff;
+
+  --color-success:       #30d158;   /* system Green (dark) */
+  --color-success-soft:  rgba(48, 209, 88, 0.16);
+  --color-warning:       #ff9f0a;   /* system Orange (dark) */
+  --color-warning-soft:  rgba(255, 159, 10, 0.16);
+  --color-danger:        #ff453a;   /* system Red (dark) */
+  --color-danger-soft:   rgba(255, 69, 58, 0.16);
+  --color-violet:        #bf5af2;   /* system Purple (dark) */
+  --color-violet-soft:   rgba(191, 90, 242, 0.16);
+
+  /* Elevation: subtle shadows like macOS windows */
+  --shadow-card:  0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.30);
+  --shadow-pop:   0 10px 30px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.04) inset;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Inter", system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+  /* Warm-tinted ambient gradient (like macOS desktop wallpapers behind translucent windows) */
+  background:
+    radial-gradient(1200px 600px at 90% -10%, rgba(10, 132, 255, 0.08), transparent 60%),
+    radial-gradient(800px 600px at -10% 110%, rgba(191, 90, 242, 0.06), transparent 60%),
+    var(--color-bg);
+  background-attachment: fixed;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 999px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code, pre, kbd, samp {
+  font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+}
+
+/* ---- glass / surface helpers ---- */
+
+.glass {
+  background: color-mix(in oklab, var(--color-bg-sidebar) 72%, transparent);
+  backdrop-filter: saturate(180%) blur(22px);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+}
+
+.glass-header {
+  background: color-mix(in oklab, var(--color-bg) 70%, transparent);
+  backdrop-filter: saturate(180%) blur(22px);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+}
+
+.card {
+  background: var(--color-bg-elev);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.hairline { border-color: var(--color-line); }
+.hairline-b { border-bottom: 1px solid var(--color-line); }
+.hairline-t { border-top: 1px solid var(--color-line); }
+.hairline-r { border-right: 1px solid var(--color-line); }
+.hairline-l { border-left: 1px solid var(--color-line); }
+
+/* ---- buttons ---- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: 8px;
+  transition: background 0.15s, transform 0.05s, opacity 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  user-select: none;
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--color-accent);
+  color: white;
+}
+.btn-primary:hover:not(:disabled) { background: var(--color-accent-hover); }
+
+.btn-success {
+  background: var(--color-success);
+  color: black;
+}
+.btn-success:hover:not(:disabled) { filter: brightness(1.08); }
+
+.btn-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  border: 1px solid color-mix(in oklab, var(--color-danger) 30%, transparent);
+}
+.btn-danger:hover:not(:disabled) { background: color-mix(in oklab, var(--color-danger) 25%, transparent); }
+
+.btn-ghost {
+  background: var(--color-bg-elev-2);
+  color: var(--color-text-2);
+  border: 1px solid var(--color-line);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+/* ---- chips / badges ---- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.chip-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+/* ---- markdown prose ---- */
+
+.markdown { color: var(--color-text); }
+.markdown > *:first-child { margin-top: 0 !important; }
+.markdown > *:last-child  { margin-bottom: 0 !important; }
+
+.markdown p { margin: 0.45rem 0; }
+
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  margin: 0.9rem 0 0.4rem;
+  color: var(--color-text);
+}
+.markdown h1 { font-size: 1.15em; }
+.markdown h2 { font-size: 1.08em; }
+.markdown h3 {
+  font-size: 1em;
+  text-transform: none;
+  color: var(--color-text);
+}
+.markdown h4 { font-size: 0.95em; color: var(--color-text-2); }
+.markdown h5, .markdown h6 { font-size: 0.9em; color: var(--color-text-2); }
+
+.markdown strong { font-weight: 600; color: var(--color-text); }
+.markdown em { font-style: italic; }
+
+.markdown a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.markdown a:hover { text-decoration: underline; }
+
+.markdown ul, .markdown ol { margin: 0.45rem 0; padding-left: 1.2rem; }
+.markdown ul { list-style: disc; }
+.markdown ol { list-style: decimal; }
+.markdown li { margin: 0.15rem 0; }
+.markdown li > p { margin: 0.2rem 0; }
+.markdown li::marker { color: var(--color-text-3); }
+
+.markdown blockquote {
+  margin: 0.55rem 0;
+  padding: 0.1rem 0.75rem;
+  border-left: 3px solid var(--color-accent);
+  color: var(--color-text-2);
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
+  border-radius: 0 6px 6px 0;
+}
+
+.markdown code {
+  font-family: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, monospace;
+  border-radius: 4px;
+  background: var(--color-bg-elev-2);
+  padding: 1px 5px;
+  font-size: 0.86em;
+  color: var(--color-text);
+}
+.markdown pre {
+  margin: 0.55rem 0;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--color-line);
+  background: var(--color-bg);
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.markdown pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.5rem 0;
+  font-size: 0.95em;
+}
+.markdown th, .markdown td {
+  border: 1px solid var(--color-line);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  background: var(--color-bg-elev-2);
+  font-weight: 600;
+  color: var(--color-text-2);
+  font-size: 0.92em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.markdown tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--color-bg-elev-2) 50%, transparent);
+}
+
+.markdown hr {
+  border: none;
+  border-top: 1px solid var(--color-line);
+  margin: 0.8rem 0;
+}
+
+/* ---- animations ---- */
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.pulse-soft { animation: pulse-soft 1.8s ease-in-out infinite; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in 0.2s ease-out; }
+
+/* Pipeline: pulsing glow ring on the active stage node */
+@keyframes node-glow {
+  0%, 100% { box-shadow: 0 0 0 3px var(--node-ring), 0 0 0 0 var(--node-ring); }
+  50%      { box-shadow: 0 0 0 3px var(--node-ring), 0 0 14px 3px var(--node-ring); }
+}
+.node-active { animation: node-glow 2s ease-in-out infinite; }
+
+/* Thinking indicator: shimmering sweep across the status word (Claude Code style) */
+@keyframes text-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.shimmer-text {
+  background: linear-gradient(90deg,
+    color-mix(in oklab, var(--color-text-3) 80%, transparent) 0%,
+    var(--color-text) 25%,
+    color-mix(in oklab, var(--color-text-3) 80%, transparent) 50%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: text-shimmer 2.4s linear infinite;
+}
+
+/* Pipeline: flowing shimmer along the in-progress connector segment */
+@keyframes connector-flow {
+  from { background-position: 0 0; }
+  to   { background-position: 24px 0; }
+}
+.connector-flow {
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--flow-accent) 55%, transparent) 0 50%,
+    var(--flow-accent) 50% 100%
+  );
+  background-size: 24px 100%;
+  animation: connector-flow 0.9s linear infinite;
+}

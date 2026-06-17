@@ -1,0 +1,50 @@
+# VictoriaMetrics scrape config for the FULL Docker Compose stack.
+# Targets are compose service DNS names (resolved on the shared compose network),
+# not host.docker.internal. The host.docker.internal variant (infra/config/scrape.yml)
+# is for `mise run infra:start`, where the demo services run natively on the host.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: argus-demo-stack
+    static_configs:
+      - targets:
+          - gateway:8081
+          - app-ui:8082
+          - app-api:8083
+          - auth:8084
+          - pgsql:8085
+          - redis:8086
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: ".*:8081"
+        target_label: service
+        replacement: gateway
+      - source_labels: [__address__]
+        regex: ".*:8082"
+        target_label: service
+        replacement: app-ui
+      - source_labels: [__address__]
+        regex: ".*:8083"
+        target_label: service
+        replacement: app-api
+      - source_labels: [__address__]
+        regex: ".*:8084"
+        target_label: service
+        replacement: auth
+      - source_labels: [__address__]
+        regex: ".*:8085"
+        target_label: service
+        replacement: pgsql
+      - source_labels: [__address__]
+        regex: ".*:8086"
+        target_label: service
+        replacement: redis
+
+  # Argus self-observability: the agent is a monitored service in its own stack.
+  - job_name: argus-server
+    static_configs:
+      - targets:
+          - argus-server:3000
+        labels:
+          service: argus-server

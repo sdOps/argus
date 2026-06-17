@@ -1,0 +1,18 @@
+# Alertmanager config for the FULL Docker Compose stack — posts to argus-server by its
+# compose DNS name. The host.docker.internal variant (infra/config/alertmanager.yml) is
+# for `mise run infra:start`, where argus-server runs natively on the host.
+global:
+  resolve_timeout: 1m
+
+route:
+  group_by: ["service", "severity"]
+  group_wait: 5s
+  group_interval: 10s
+  repeat_interval: 3m
+  receiver: "argus-webhook"
+
+receivers:
+  - name: "argus-webhook"
+    webhook_configs:
+      - url: "http://argus-server:3000/api/alerts/alertmanager"
+        send_resolved: true

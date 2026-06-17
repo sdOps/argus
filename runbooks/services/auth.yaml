@@ -1,0 +1,68 @@
+service: auth
+tier: auth
+description: >
+  Authentication/authorization service handling token validation,
+  login, and session management. Depends on pgsql for user data
+  and redis for session caching.
+
+triggers:
+  - pattern: "token validation errors"
+    metric: auth_token_validation_errors
+    threshold: 50
+  - pattern: "login failures"
+    metric: auth_login_failures
+    threshold: 20
+  - pattern: "session errors"
+    metric: auth_session_errors
+    threshold: 10
+
+steps:
+  - id: 1
+    title: Check token validation errors
+    action: manual
+    instruction: >
+      If auth_token_validation_errors > 50, the service is failing
+      to validate tokens. This could be a database connectivity
+      problem, a service crash, or a session store issue.
+
+  - id: 2
+    title: Check session store
+    action: manual
+    instruction: >
+      If auth_session_errors > 10, the Redis session store may be
+      unreachable. Check redis_connection_errors and
+      redis_memory_used_ratio. If redis is failing, sessions
+      cannot be validated.
+
+  - id: 3
+    title: Check database connectivity
+    action: manual
+    instruction: >
+      If pgsql_connection_errors > 0, auth cannot look up user
+      credentials. Check pgsql runbook for connection pool issues.
+
+  - id: 4
+    title: Restart auth container
+    action: executable
+    command: "docker compose restart auth"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps auth"
+
+  - id: 5
+    title: Escalate to security team
+    action: notify
+    channel: "#security-engineering"
+    condition: "if steps 1-4 did not resolve within 5 minutes"
+
+related_runbooks:
+  - app-api.yaml
+  - pgsql.yaml
+  - redis.yaml
+
+known_patterns:
+  - name: "Auth outage"
+    description: >
+      When auth fails, token_validation_errors spike. app-api
+      starts returning 401s, and gateway shows upstream errors.
+      This cascades across all authenticated endpoints.
+    root_cause: auth

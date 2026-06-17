@@ -1,0 +1,15 @@
+global:
+  resolve_timeout: 1m
+
+route:
+  group_by: ["service", "severity"]
+  group_wait: 5s
+  group_interval: 10s
+  repeat_interval: 3m
+  receiver: "argus-webhook"
+
+receivers:
+  - name: "argus-webhook"
+    webhook_configs:
+      - url: "http://host.docker.internal:3000/api/alerts/alertmanager"
+        send_resolved: true

@@ -1,0 +1,69 @@
+[tools]
+bun = "1.3.6"
+
+[env]
+OLLAMA_BASE_URL = "http://localhost:11434"
+OLLAMA_MODEL = "qwen3.6:latest"
+MOCK_SLACK_URL = "http://localhost:8090"
+SLACK_WEBHOOK_URL = ""
+
+[settings]
+experimental = true
+
+[hooks]
+enter = "git config core.hooksPath .githooks"
+
+# ── Task definitions ──
+
+[tasks.dev]
+description = "Start argus-server + argus-ui + all demo-services"
+run = """
+bunx concurrently -k -n server,ui,services -c green,cyan,yellow \
+  "bun run --cwd argus-server dev" \
+  "bun run --cwd argus-ui dev" \
+  "mise run services"
+"""
+depends = ["install"]
+
+[tasks.demo]
+description = "Start demo-services only (for infra testing)"
+run = "mise run services"
+depends = ["install"]
+
+[tasks.services]
+description = "Start all demo microservices"
+run = """
+bunx concurrently -k -n gateway,app-ui,app-api,auth,pgsql,redis -c blue,magenta,cyan,yellow,green,red \
+  "bun demo-services/gateway.ts" \
+  "bun demo-services/app-ui.ts" \
+  "bun demo-services/app-api.ts" \
+  "bun demo-services/auth.ts" \
+  "bun demo-services/pgsql.ts" \
+  "bun demo-services/redis.ts"
+"""
+
+[tasks.install]
+description = "Install all dependencies"
+run = """
+bun install
+cd argus-server && bun install
+cd ../argus-ui && bun install
+"""
+
+[tasks.typecheck]
+description = "Typecheck server + UI (tsc --noEmit) — same as CI"
+run = """
+bun run --cwd argus-server typecheck
+bun run --cwd argus-ui typecheck
+"""
+
+[tasks.test]
+description = "Run the deterministic-seam tests (argus-server)"
+run = "bun test --cwd argus-server"
+
+[tasks.clean]
+description = "Remove node_modules and databases"
+run = """
+rm -rf node_modules argus-server/node_modules argus-ui/node_modules
+rm -f argus-server/argus.db argus-server/argus.db-wal argus-server/argus.db-shm
+"""

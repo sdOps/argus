@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+#MISE description="Bring up the FULL Argus stack in Docker (compose: services + server + UI + observability)"
+set -euo pipefail
+
+REPO_ROOT="${MISE_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+
+echo "╔══════════════════════════════════════════╗"
+echo "║     Argus — Starting Full Docker Stack   ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "▸ Note: Ollama is NOT in compose. The agent reaches it on the host via"
+echo "  host.docker.internal:11434 (OLLAMA_BASE_URL). Make sure Ollama is running"
+echo "  on your host or triage will stall waiting for the model."
+echo ""
+
+docker compose -f "$COMPOSE_FILE" up --build -d "$@"
+
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║       Argus Stack Running (Docker)       ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "  Argus UI + API:     http://localhost:3000   (UI served single-origin by argus-server)"
+echo "  VictoriaMetrics:    http://localhost:8428/vmui"
+echo "  Alertmanager:       http://localhost:9093"
+echo "  vmalert:            http://localhost:8880"
+echo "  Mock Slack:         http://localhost:8090/messages"
+echo ""
+echo "  Demo services:      :8081 gateway · :8082 app-ui · :8083 app-api"
+echo "                      :8084 auth · :8085 pgsql · :8086 redis"
+echo ""
+echo "  Trigger a scenario: mise run infra:demo -- db   (cache | auth | all | recover)"
+echo "  Tail logs:          docker compose logs -f argus-server"
+echo "  Stop:               mise run infra:down"
+echo ""

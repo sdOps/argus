@@ -1,0 +1,73 @@
+service: redis
+tier: cache
+description: >
+  Redis cache layer providing session storage and query caching.
+  Foundational service — its failure cascades upward causing
+  cache misses that overwhelm pgsql and app-api.
+
+triggers:
+  - pattern: "connection errors"
+    metric: redis_connection_errors
+    threshold: 3
+  - pattern: "memory pressure"
+    metric: redis_memory_used_ratio
+    threshold: 0.90
+  - pattern: "cache miss spike"
+    metric: redis_cache_hit_rate
+    threshold: 0.50
+    direction: below
+  - pattern: "eviction storm"
+    metric: redis_evicted_keys
+    threshold: 100
+
+steps:
+  - id: 1
+    title: Check memory usage
+    action: manual
+    instruction: >
+      If redis_memory_used_ratio > 0.90, Redis is under memory
+      pressure. Check for large keys or stale cache entries:
+      docker compose exec redis redis-cli INFO memory
+
+  - id: 2
+    title: Check cache hit rate
+    action: manual
+    instruction: >
+      If redis_cache_hit_rate < 0.50, cache effectiveness has
+      collapsed. This means every request is hitting the database
+      directly, which can cascade into pgsql connection pool
+      exhaustion.
+
+  - id: 3
+    title: Flush stale keys
+    action: executable
+    command: "docker compose exec redis sh -c 'redis-cli --scan --pattern \"stale:*\" | xargs redis-cli del'"
+    requires_confirmation: true
+    rollback: "No rollback — keys are already stale"
+
+  - id: 4
+    title: Restart Redis container
+    action: executable
+    command: "docker compose restart redis"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps redis"
+
+  - id: 5
+    title: Escalate to platform engineering
+    action: notify
+    channel: "#platform-engineering"
+    condition: "if steps 1-4 did not resolve within 10 minutes"
+
+related_runbooks:
+  - app-api.yaml
+  - pgsql.yaml
+
+known_patterns:
+  - name: "Cache eviction storm"
+    description: >
+      redis memory_used_ratio reaches 0.97, cache_hit_rate
+      collapses to 0.10, and evicted_keys spike to thousands.
+      This causes app-api latency to spike as cache misses
+      hit pgsql directly, filling its connection pool.
+      Classic cascading cache failure.
+    root_cause: redis

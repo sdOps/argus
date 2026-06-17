@@ -1,0 +1,80 @@
+service: pgsql
+tier: database
+description: >
+  PostgreSQL database providing persistent data storage.
+  Foundational service — its failure cascades upward through
+  app-api and auth to gateway.
+
+triggers:
+  - pattern: "connection errors"
+    metric: pgsql_connection_errors
+    threshold: 5
+  - pattern: "connection pool"
+    metric: pgsql_connection_pool_used
+    threshold: 0.90
+  - pattern: "query timeout"
+    metric: pgsql_query_duration_p99_ms
+    threshold: 5000
+  - pattern: "replication lag"
+    metric: pgsql_replication_lag_seconds
+    threshold: 10
+
+steps:
+  - id: 1
+    title: Check connection pool
+    action: manual
+    instruction: >
+      Check pgsql_connection_pool_used metric. If above 0.90,
+      the connection pool is exhausted. Check which services are
+      holding connections: docker compose logs app-api and
+      docker compose logs auth for connection error traces.
+
+  - id: 2
+    title: Restart pgsql container
+    action: executable
+    command: "docker compose restart pgsql"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps pgsql"
+
+  - id: 3
+    title: Check replication lag
+    action: manual
+    instruction: >
+      If pgsql_replication_lag_seconds > 30, replication is at
+      risk. Check container health: docker compose ps pgsql and
+      inspect logs with docker compose logs pgsql.
+
+  - id: 4
+    title: Check for long-running queries
+    action: manual
+    instruction: >
+      If pgsql_query_duration_p99_ms > 5000, check for blocking
+      queries or table locks. Inspect with:
+      docker compose exec pgsql psql -U postgres -c "SELECT pid, query, state FROM pg_stat_activity WHERE state != 'idle';"
+
+  - id: 5
+    title: Escalate to DBA
+    action: notify
+    channel: "#platform-engineering"
+    condition: "if steps 1-4 did not resolve within 10 minutes"
+
+related_runbooks:
+  - app-api.yaml
+  - redis.yaml
+
+known_patterns:
+  - name: "Database failure cascade"
+    description: >
+      pgsql connection errors and query timeouts cause app-api
+      dependency_errors to spike, which raises app-api http_error_rate,
+      which increases gateway upstream_error_rate. This is the
+      most common cascading failure pattern.
+    root_cause: pgsql
+
+  - name: "Cache eviction storm (secondary)"
+    description: >
+      When redis cache hit rate collapses, direct pgsql queries
+      increase, filling the connection pool. pgsql appears to be
+      the problem, but the actual root cause is redis memory
+      pressure causing cache misses.
+    root_cause: redis

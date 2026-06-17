@@ -1,0 +1,90 @@
+service: app-api
+tier: backend
+description: >
+  Backend REST API service. Depends on auth for token validation,
+  pgsql for data storage, and redis for caching.
+
+triggers:
+  - pattern: "HTTP error rate"
+    metric: appapi_http_error_rate
+    threshold: 0.50
+  - pattern: "high latency"
+    metric: appapi_latency_p99_ms
+    threshold: 2000
+  - pattern: "dependency errors"
+    metric: appapi_dependency_errors
+    threshold: 10
+
+steps:
+  - id: 1
+    title: Check dependency errors
+    action: manual
+    instruction: >
+      If appapi_dependency_errors > 10, one or more downstream
+      services are failing. Check auth, pgsql, and redis metrics
+      to identify which dependency is the source.
+
+  - id: 2
+    title: Check auth service
+    action: manual
+    instruction: >
+      If auth_token_validation_errors is elevated, the API is
+      receiving 401 responses from auth. This is an auth outage
+      pattern, not an app-api issue.
+
+  - id: 3
+    title: Check database connectivity
+    action: manual
+    instruction: >
+      If pgsql_connection_errors > 0 or pgsql_query_duration_p99_ms
+      is elevated, the database is the bottleneck. Check pgsql
+      runbook for connection pool and query issues.
+
+  - id: 4
+    title: Check cache layer
+    action: manual
+    instruction: >
+      If redis_cache_hit_rate < 0.50 or redis_memory_used_ratio
+      > 0.90, cache misses are forcing direct database queries,
+      causing cascading latency. Check redis runbook.
+
+  - id: 5
+    title: Restart app-api container
+    action: executable
+    command: "docker compose restart app-api"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps app-api"
+
+  - id: 6
+    title: Escalate to backend team
+    action: notify
+    channel: "#backend-engineering"
+    condition: "if steps 1-5 did not resolve within 10 minutes"
+
+related_runbooks:
+  - gateway.yaml
+  - auth.yaml
+  - pgsql.yaml
+  - redis.yaml
+
+known_patterns:
+  - name: "Database failure cascade"
+    description: >
+      pgsql failure causes app-api dependency_errors to spike,
+      then app-api http_error_rate rises, then gateway
+      upstream_errors rise. Root cause: pgsql.
+    root_cause: pgsql
+
+  - name: "Auth outage"
+    description: >
+      auth failure causes token validation errors, making app-api
+      return 401s. Gateway then shows upstream errors. Root cause: auth.
+    root_cause: auth
+
+  - name: "Cache eviction storm"
+    description: >
+      redis memory pressure causes cache hits to collapse,
+      forcing direct pgsql queries. This fills the pgsql
+      connection pool and cascades into API latency spikes.
+      Root cause: redis.
+    root_cause: redis

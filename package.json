@@ -1,0 +1,9 @@
+{
+  "name": "argus",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

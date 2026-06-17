@@ -1,0 +1,15 @@
+node_modules/
+argus-server/argus.db
+argus-server/argus.db-wal
+argus-server/argus.db-shm
+argus-server/dist/
+argus-ui/dist/
+*.log
+.DS_Store
+
+# Agent / VCS internals
+.jj/
+
+# Pi agent credentials — never commit (Pi writes provider auth tokens here)
+.pi/agent/auth.json
+

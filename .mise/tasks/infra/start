@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+#MISE description="Start the full Argus stack (Docker + services + server + UI)"
+set -euo pipefail
+
+REPO_ROOT="${MISE_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+INFRA_DIR="$REPO_ROOT/infra"
+
+echo "╔══════════════════════════════════════════╗"
+echo "║         Argus — Starting Stack           ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+
+# ── 1. Docker Compose (VictoriaMetrics + vmalert + Alertmanager) ──
+
+echo "▸ Starting VictoriaMetrics stack…"
+docker compose -f "$INFRA_DIR/docker-compose.yml" up -d
+
+echo "  Waiting for VictoriaMetrics to be ready…"
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:8428/health > /dev/null 2>&1; then
+    echo "  ✓ VictoriaMetrics is healthy"
+    break
+  fi
+  sleep 1
+done
+
+# ── 2. Demo services ──
+
+echo "▸ Starting demo services…"
+mise run services &
+SERVICES_PID=$!
+disown
+
+echo "  Waiting for demo services to be ready…"
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:8081/metrics > /dev/null 2>&1; then
+    echo "  ✓ Demo services are healthy"
+    break
+  fi
+  sleep 1
+done
+
+# ── 3. Mock Slack ──
+
+echo "▸ Starting mock Slack server…"
+bun "$INFRA_DIR/scripts/mock-slack.js" &
+MOCK_PID=$!
+disown
+
+echo "  Waiting for mock Slack…"
+for i in $(seq 1 15); do
+  if curl -sf http://localhost:8090/health > /dev/null 2>&1; then
+    echo "  ✓ Mock Slack is healthy"
+    break
+  fi
+  sleep 1
+done
+
+# ── 4. Argus server (disable built-in scraper — vmalert provides alerts) ──
+
+echo "▸ Starting Argus server (with Alertmanager integration)…"
+DISABLE_SCRAPER=1 bun run --cwd "$REPO_ROOT/argus-server" dev &
+SERVER_PID=$!
+disown
+
+echo "  Waiting for Argus server…"
+for i in $(seq 1 30); do
+  if curl -sf http://localhost:3000/api/services > /dev/null 2>&1; then
+    echo "  ✓ Argus server is healthy"
+    break
+  fi
+  sleep 1
+done
+
+# ── 5. Argus UI ──
+
+echo "▸ Starting Argus UI…"
+bun run --cwd "$REPO_ROOT/argus-ui" dev &
+UI_PID=$!
+disown
+
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║          Argus Stack Running             ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "  Argus UI:           http://localhost:5173"
+echo "  Argus API:          http://localhost:3000"
+echo "  VictoriaMetrics:    http://localhost:8428/vmui"
+echo "  Alertmanager:       http://localhost:9093"
+echo "  vmalert:            http://localhost:8880"
+echo "  Mock Slack:         http://localhost:8090"
+echo ""
+echo "  Demo services:"
+echo "    :8081  gateway"
+echo "    :8082  app-ui"
+echo "    :8083  app-api"
+echo "    :8084  auth"
+echo "    :8085  pgsql"
+echo "    :8086  redis"
+echo ""
+echo "  Demo scenarios:"
+echo "    mise run infra:demo -- db       # database cascade"
+echo "    mise run infra:demo -- cache    # redis eviction storm"
+echo "    mise run infra:demo -- auth    # auth outage"
+echo "    mise run infra:demo -- all      # everything fails"
+echo "    mise run infra:demo -- recover  # restore all services"
+echo ""
+echo "  Stop:  mise run infra:stop"
+echo ""

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# pre-push — run typecheck + tests before allowing a push (matches CI).
+set -euo pipefail
+
+echo "⏳ Running pre-push checks (typecheck + test)…"
+
+mise run typecheck
+mise run test
+
+echo "✅ Pre-push checks passed."

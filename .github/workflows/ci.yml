@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+
+      - name: Install dependencies
+        run: |
+          bun install --cwd argus-server
+          bun install --cwd argus-ui
+
+      - name: Typecheck — server
+        run: bun run --cwd argus-server typecheck
+
+      - name: Typecheck — UI
+        run: bun run --cwd argus-ui typecheck
+
+      - name: Build — UI
+        # The argus-server Docker image bundles the built UI (single-origin serving), so a
+        # broken production build would break the image. Validate it here in the fast lane.
+        run: bun run --cwd argus-ui build
+
+      - name: Test — deterministic seams
+        run: bun test --cwd argus-server
+
+  # Validate the one-command reference stack actually builds. No Ollama needed — that's a
+  # runtime dependency on the host, not a build-time one (see docker-compose.yml).
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build compose images (demo-services + argus-server, which builds the UI)
+        run: docker compose build

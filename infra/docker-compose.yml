@@ -1,0 +1,43 @@
+services:
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:latest
+    container_name: argus-vm
+    ports:
+      - "8428:8428"
+    volumes:
+      - vmdata:/victoria-metrics-data
+      - ./config/scrape.yml:/etc/vm/scrape.yml:ro
+    command:
+      - "-promscrape.config=/etc/vm/scrape.yml"
+      - "-httpListenAddr=:8428"
+    restart: unless-stopped
+
+  vmalert:
+    image: victoriametrics/vmalert:latest
+    container_name: argus-vmalert
+    ports:
+      - "8880:8880"
+    depends_on:
+      - victoriametrics
+    volumes:
+      - ./config/rules:/etc/vmalert/rules:ro
+    command:
+      - "-rule=/etc/vmalert/rules/services.yml"
+      - "-datasource.url=http://victoriametrics:8428"
+      - "-notifier.url=http://alertmanager:9093"
+      - "-remoteWrite.url=http://victoriametrics:8428"
+      - "-remoteRead.url=http://victoriametrics:8428"
+      - "-httpListenAddr=:8880"
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: argus-alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    restart: unless-stopped
+
+volumes:
+  vmdata:

@@ -1,0 +1,198 @@
+groups:
+  - name: gateway
+    interval: 10s
+    rules:
+      - alert: HighUpstreamErrorRate
+        expr: gateway_upstream_error_rate > 0.5
+        for: 10s
+        labels:
+          severity: critical
+          service: gateway
+        annotations:
+          summary: "Gateway upstream error rate high"
+          description: "gateway upstream error rate is {{ $value }} (threshold: 0.5)"
+
+      - alert: HighGatewayLatency
+        expr: gateway_latency_p99_ms > 2000
+        for: 10s
+        labels:
+          severity: warning
+          service: gateway
+        annotations:
+          summary: "Gateway latency high"
+          description: "gateway p99 latency is {{ $value }}ms (threshold: 2000ms)"
+
+  - name: app-ui
+    interval: 10s
+    rules:
+      - alert: AssetLoadFailures
+        expr: appui_asset_load_failures > 5
+        for: 10s
+        labels:
+          severity: warning
+          service: app-ui
+        annotations:
+          summary: "Frontend asset load failures"
+          description: "app-ui asset load failures: {{ $value }} (threshold: 5)"
+
+      - alert: FrontendErrorRate
+        expr: appui_http_error_rate > 0.5
+        for: 10s
+        labels:
+          severity: critical
+          service: app-ui
+        annotations:
+          summary: "Frontend error rate high"
+          description: "app-ui HTTP error rate is {{ $value }} (threshold: 0.5)"
+
+  - name: app-api
+    interval: 10s
+    rules:
+      - alert: HighAPIErrorRate
+        expr: appapi_http_error_rate > 0.5
+        for: 10s
+        labels:
+          severity: critical
+          service: app-api
+        annotations:
+          summary: "API error rate high"
+          description: "app-api HTTP error rate is {{ $value }} (threshold: 0.5)"
+
+      - alert: HighAPILatency
+        expr: appapi_latency_p99_ms > 2000
+        for: 10s
+        labels:
+          severity: warning
+          service: app-api
+        annotations:
+          summary: "API latency high"
+          description: "app-api p99 latency is {{ $value }}ms (threshold: 2000ms)"
+
+      - alert: DependencyErrors
+        expr: appapi_dependency_errors > 10
+        for: 10s
+        labels:
+          severity: critical
+          service: app-api
+        annotations:
+          summary: "API dependency errors"
+          description: "app-api dependency errors: {{ $value }} (threshold: 10)"
+
+  - name: auth
+    interval: 10s
+    rules:
+      - alert: TokenValidationErrors
+        expr: auth_token_validation_errors > 50
+        for: 10s
+        labels:
+          severity: critical
+          service: auth
+        annotations:
+          summary: "Token validation errors"
+          description: "auth token validation errors: {{ $value }} (threshold: 50)"
+
+      - alert: LoginFailures
+        expr: auth_login_failures > 30
+        for: 10s
+        labels:
+          severity: warning
+          service: auth
+        annotations:
+          summary: "Login failures elevated"
+          description: "auth login failures: {{ $value }} (threshold: 30)"
+
+      - alert: SessionErrors
+        expr: auth_session_errors > 20
+        for: 10s
+        labels:
+          severity: warning
+          service: auth
+        annotations:
+          summary: "Session errors elevated"
+          description: "auth session errors: {{ $value }} (threshold: 20)"
+
+  - name: pgsql
+    interval: 10s
+    rules:
+      - alert: DBConnectionErrors
+        expr: pgsql_connection_errors > 5
+        for: 10s
+        labels:
+          severity: critical
+          service: pgsql
+        annotations:
+          summary: "Database connection errors"
+          description: "pgsql connection errors: {{ $value }} (threshold: 5)"
+
+      - alert: DBQueryTimeout
+        expr: pgsql_query_duration_p99_ms > 10000
+        for: 10s
+        labels:
+          severity: warning
+          service: pgsql
+        annotations:
+          summary: "Database query timeout"
+          description: "pgsql p99 query duration: {{ $value }}ms (threshold: 10000ms)"
+
+      - alert: ConnectionPoolExhausted
+        expr: pgsql_connection_pool_used > 0.90
+        for: 10s
+        labels:
+          severity: critical
+          service: pgsql
+        annotations:
+          summary: "Database connection pool exhausted"
+          description: "pgsql connection pool usage: {{ $value }} (threshold: 0.90)"
+
+      - alert: ReplicationLag
+        expr: pgsql_replication_lag_seconds > 30
+        for: 10s
+        labels:
+          severity: warning
+          service: pgsql
+        annotations:
+          summary: "Database replication lag"
+          description: "pgsql replication lag: {{ $value }}s (threshold: 30s)"
+
+  - name: redis
+    interval: 10s
+    rules:
+      - alert: RedisConnectionErrors
+        expr: redis_connection_errors > 3
+        for: 10s
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis connection errors"
+          description: "redis connection errors: {{ $value }} (threshold: 3)"
+
+      - alert: MemoryPressure
+        expr: redis_memory_used_ratio > 0.90
+        for: 10s
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis memory pressure"
+          description: "redis memory used ratio: {{ $value }} (threshold: 0.90)"
+
+      - alert: CacheHitRateCollapsed
+        expr: redis_cache_hit_rate < 0.30
+        for: 10s
+        labels:
+          severity: warning
+          service: redis
+        annotations:
+          summary: "Redis cache hit rate collapsed"
+          description: "redis cache hit rate: {{ $value }} (threshold: 0.30)"
+
+      - alert: EvictionStorm
+        expr: redis_evicted_keys > 1000
+        for: 10s
+        labels:
+          severity: critical
+          service: redis
+        annotations:
+          summary: "Redis eviction storm"
+          description: "redis evicted keys: {{ $value }} (threshold: 1000)"

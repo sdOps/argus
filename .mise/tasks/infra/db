@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#MISE description="Open a SQLite prompt against the argus DB (compose stack)"
+set -euo pipefail
+
+MODE="${1:-compose}"
+
+case "$MODE" in
+  compose)
+    TMP_DIR=$(mktemp -d)
+    TMP="$TMP_DIR/argus.db"
+    trap "rm -rf '$TMP_DIR'" EXIT
+    echo "Copying argus.db + WAL files from argus-server container…"
+    docker compose cp argus-server:/data/argus.db "$TMP"
+    docker compose cp argus-server:/data/argus.db-wal "$TMP-wal" 2>/dev/null || true
+    docker compose cp argus-server:/data/argus.db-shm "$TMP-shm" 2>/dev/null || true
+    if [[ ! -s "$TMP" ]]; then
+      echo "Error: copied file is empty — is the argus-server container running?"
+      exit 1
+    fi
+    echo "  (read-only snapshot — changes here do NOT affect the running container)"
+    echo "  (run 'mise run infra:db -- native' for the local dev DB)"
+    echo ""
+    sqlite3 "$TMP" \
+      -cmd ".headers on" \
+      -cmd ".mode column" \
+      -cmd ".tables"
+    ;;
+  native)
+    DB="${DB_PATH:-$(dirname "$0")/../../../argus-server/argus.db}"
+    echo "Connecting to local dev DB: $DB"
+    echo ""
+    sqlite3 "$DB" \
+      -cmd ".headers on" \
+      -cmd ".mode column" \
+      -cmd ".tables"
+    ;;
+  *)
+    echo "Usage: mise run infra:db [-- compose|native]"
+    echo ""
+    echo "  compose  — connect to /data/argus.db inside the running argus-server container (default)"
+    echo "  native   — connect to argus-server/argus.db from mise run dev"
+    exit 1
+    ;;
+esac

@@ -1,0 +1,23 @@
+# Build context for the argus-server image is the repo root. Keep it lean and never
+# ship local state (node_modules are reinstalled in-image; the DB lives on a volume).
+**/node_modules
+**/dist
+argus-server/argus.db
+argus-server/argus.db-wal
+argus-server/argus.db-shm
+**/*.log
+.git
+.jj
+.github
+.claude
+.DS_Store
+
+# Not needed by the argus-server image. (argus-ui IS needed — the server image builds the
+# UI in a multi-stage step and serves it single-origin; its node_modules/dist are still
+# excluded by the **/node_modules and **/dist rules above.)
+demo-services
+infra
+docs
+runbooks/.git
+*.md
+TODO.md

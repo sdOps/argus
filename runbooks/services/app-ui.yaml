@@ -1,0 +1,65 @@
+service: app-ui
+tier: frontend
+description: >
+  React/Next.js frontend service serving the user interface.
+  Depends on gateway for inbound traffic and app-api for data.
+
+triggers:
+  - pattern: "asset load failures"
+    metric: appui_asset_load_failures
+    threshold: 5
+  - pattern: "SSR errors"
+    metric: appui_ssr_errors
+    threshold: 1
+  - pattern: "HTTP error rate"
+    metric: appui_http_error_rate
+    threshold: 0.50
+
+steps:
+  - id: 1
+    title: Check asset load failures
+    action: manual
+    instruction: >
+      If appui_asset_load_failures > 5, build artifacts may be
+      missing or corrupted. Check recent deployments and whether
+      the container started cleanly with docker compose logs app-ui.
+
+  - id: 2
+    title: Check SSR errors
+    action: manual
+    instruction: >
+      If appui_ssr_errors > 0, server-side rendering is failing.
+      This usually indicates a code issue or missing environment
+      variables. Check container logs: docker compose logs app-ui.
+
+  - id: 3
+    title: Check downstream API
+    action: manual
+    instruction: >
+      If appui_http_error_rate > 0.50 and SSR errors are 0,
+      the error is likely from app-api calls failing. Correlate
+      with app-api alerts to find the root cause.
+
+  - id: 4
+    title: Restart app-ui container
+    action: executable
+    command: "docker compose restart app-ui"
+    requires_confirmation: true
+    rollback: "Redeploy from source: docker compose up -d --build --no-deps app-ui"
+
+  - id: 5
+    title: Escalate to frontend team
+    action: notify
+    channel: "#frontend-engineering"
+    condition: "if steps 1-4 did not resolve within 10 minutes"
+
+related_runbooks:
+  - gateway.yaml
+  - app-api.yaml
+
+known_patterns:
+  - name: "Gateway error propagation"
+    description: >
+      Gateway upstream errors cause the frontend to receive
+      502/503 errors. Root cause is likely downstream, not app-ui.
+    root_cause: gateway

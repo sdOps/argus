@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+#MISE description="Stop the full Argus stack"
+set -euo pipefail
+
+REPO_ROOT="${MISE_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+INFRA_DIR="$REPO_ROOT/infra"
+
+echo "╔══════════════════════════════════════════╗"
+echo "║         Argus — Stopping Stack           ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+
+# ── Stop native processes ──
+
+echo "▸ Stopping native processes…"
+pkill -f "demo-services/" 2>/dev/null && echo "  ✓ Demo services stopped" || echo "  (demo services not running)"
+pkill -f "mock-slack" 2>/dev/null && echo "  ✓ Mock Slack stopped" || echo "  (mock Slack not running)"
+pkill -f "argus-server" 2>/dev/null && echo "  ✓ Argus server stopped" || echo "  (Argus server not running)"
+pkill -f "vite" 2>/dev/null && echo "  ✓ Argus UI stopped" || echo "  (Argus UI not running)"
+pkill -f "concurrently" 2>/dev/null || true
+
+# ── Free ports if anything is still bound ──
+
+echo "▸ Freeing ports…"
+for port in 3000 5173 8081 8082 8083 8084 8085 8086 8090; do
+  pid=$(lsof -ti :$port 2>/dev/null || true)
+  if [ -n "$pid" ]; then
+    kill $pid 2>/dev/null || true
+  fi
+done
+
+# ── Stop Docker Compose ──
+
+echo "▸ Stopping VictoriaMetrics stack…"
+docker compose -f "$INFRA_DIR/docker-compose.yml" down
+
+echo ""
+echo "  ✓ Argus stack stopped"
+echo ""

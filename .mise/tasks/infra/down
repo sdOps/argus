@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#MISE description="Stop the full Docker stack started by infra:up (add -- -v to drop volumes)"
+set -euo pipefail
+
+REPO_ROOT="${MISE_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+
+echo "▸ Stopping full Argus Docker stack…"
+docker compose -f "$COMPOSE_FILE" down "$@"
+echo "  ✓ Stopped. (Incident history persists in the 'argus_argusdata' volume."
+echo "    Pass '-- -v' to also remove volumes: mise run infra:down -- -v)"
