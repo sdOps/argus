@@ -76,15 +76,15 @@ job is to find the one foundational service actually at fault.
 Argus is the *system* assembled around off-the-shelf foundations. It is not a from-scratch
 agent framework:
 
-- **[Pi](https://github.com/earendil-works/pi-coding-agent)** (`@earendil-works/pi-coding-agent`)
+- **[Pi](https://pi.dev/)** (`@earendil-works/pi-coding-agent`)
   — the agent harness. It owns the **inner loop**: within a single turn, *model → tool call →
   observe result → repeat → final answer*, plus session lifecycle and token streaming. Argus
   registers its 12 domain tools with Pi and drives Pi sessions; it does not reimplement this
   per-turn loop.
-- **Ollama** — serves the local LLM the agent reasons with (`OLLAMA_BASE_URL` / `OLLAMA_MODEL`).
-- **Bun** — runtime for the server and the demo services.
+- **[Ollama](https://ollama.com)** — serves the local LLM the agent reasons with (`OLLAMA_BASE_URL` / `OLLAMA_MODEL`).
+- **[Bun](https://bun.sh)** — runtime for the server and the demo services.
 - **React + Vite** — the display-only console.
-- **VictoriaMetrics + vmalert + Alertmanager** — the optional Prometheus-style alerting path.
+- **[VictoriaMetrics](https://victoriametrics.com)** + vmalert + Alertmanager — the optional Prometheus-style alerting path.
 
 **Two loops, and the split is the point.** Pi runs the *inner* per-turn tool-calling loop;
 Argus implements the ***outer* control loop**: the reconciler (§3.2) that decides which turns
@@ -92,8 +92,7 @@ to run and when, and sequences the multi-turn lifecycle (investigate → await a
 → RCA). The rest of what is **original to Argus** hangs off that outer loop: the durability
 model (operational state and conversation both reconstructable from SQLite), the
 human-in-the-loop approval gate with agent-executed remediation, the ask-the-operator RCA
-pattern, and the explicit determinism/agency boundary. The harness is substrate; the
-operational control loop is the contribution.
+pattern, and the explicit determinism/agency boundary.
 
 ---
 
@@ -114,9 +113,9 @@ Argus supports two ingestion modes that converge on the same DB state:
   - **`mise run infra:start`** — observability in Docker, services/server/UI native; the
     containers reach the host via `host.docker.internal`.
 
-Everything downstream of "an `alerts` row exists" is identical. **Alert _detection_ is
-deterministic infrastructure; it is never the agent's job.** This is the first place the
-determinism boundary shows up.
+Everything downstream of "an `alerts` row exists" is identical. Detection is always
+deterministic — scraper thresholds or Alertmanager rules, not the model. This is the first
+place the determinism boundary shows up.
 
 ---
 
@@ -124,7 +123,7 @@ determinism boundary shows up.
 
 ### 3.1 A headless, server-side agent
 
-A single persistent [Pi](https://github.com/earendil-works/pi-coding-agent) session runs
+A single persistent [Pi](https://pi.dev/) session runs
 **inside `argus-server`**, created at boot, not per browser tab. Moving the agent server-side was the structural decision that made everything else work, and it was not the first design.
 
 > **Evolution:** Argus originally ran the agent inside the browser's WebSocket session. That
@@ -234,8 +233,7 @@ The gate is enforced in two independent places: the UI flow and the tool itself.
 
 > **Evolution:** an earlier version had the _server_ perform the recovery directly on approve.
 > It worked, but it meant the "agent" wasn't actually doing the remediation. Moving execution
-> into `execute_runbook_step` made the agent the actor again, with the gate intact. Proposal
-> is the LLM's, execution is the LLM's, **authorization is the human's.**
+> into `execute_runbook_step` made the agent the actor again, with the gate intact.
 
 ### The RCA branch: asking the human
 
