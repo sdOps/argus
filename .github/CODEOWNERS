@@ -1,0 +1,5 @@
+# CODEOWNERS — requires "Require review from Code Owners" branch protection rule
+# Last matching pattern wins.
+
+# Default owner for the entire repo
+* @sdOps
