@@ -19,9 +19,11 @@ export function computeWorkflowStep(
   if (firingAlerts.length === 0) return "resolved";
   if (incident && incident.status === "resolved") return "resolved";
 
-  // Fix applied and metrics confirmed healthy; agent is writing RCA before closing
-  if (incident && incident.status === "mitigated") return "verifying";
+  // Approved confirmation gate → executing (takes priority over mitigated)
   if (approved.length > 0) return "executing";
+  // Incident mitigated but firing alerts remain → still executing (cooldown: metrics settling).
+  // If all alerts had resolved, we'd have returned "resolved" above.
+  if (incident && incident.status === "mitigated") return "executing";
   if (pending.length > 0) return "confirmation";
 
   if (incident) {
