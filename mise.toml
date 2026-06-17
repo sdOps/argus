@@ -60,6 +60,7 @@ bun run --cwd argus-ui typecheck
 [tasks.test]
 description = "Run the deterministic-seam tests (argus-server)"
 run = "bun test --cwd argus-server"
+depends = ["install"]
 
 [tasks.clean]
 description = "Remove node_modules and databases"
