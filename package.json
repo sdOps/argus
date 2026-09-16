@@ -5,5 +5,8 @@
   "type": "module",
   "devDependencies": {
     "concurrently": "^9.2.0"
+  },
+  "overrides": {
+    "shell-quote": "^1.10.0"
   }
 }
