@@ -1,0 +1,36 @@
+name: PR Title
+
+# Lints the PR title against Conventional Commits. This matters most on a
+# squash merge, where the squash commit message defaults to the PR title —
+# argus also allows merge and rebase merges, where individual commits land
+# as-is, so this doesn't guarantee every commit on main complies, only the
+# PR title itself.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint PR title
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+          requireScope: false
