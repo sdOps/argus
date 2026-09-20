@@ -28,7 +28,7 @@ gateway → app-ui, app-api → auth, pgsql, redis
 Argus is the system assembled around off-the-shelf foundations. It is not a from-scratch agent
 framework. The original work is the operational control loop *around* the agent, not the harness.
 
-- **[Pi](https://github.com/earendil-works/pi-coding-agent)** (`@earendil-works/pi-coding-agent`) —
+- **[Pi](https://github.com/earendil-works/pi)** (`@earendil-works/pi-coding-agent`) —
   the agent harness. It runs the per-turn tool-calling loop (model → tool call → observe result →
   repeat) and session lifecycle; Argus registers its 12 triage tools with Pi and drives the
   sessions. Configured under `.pi/agent/`.
