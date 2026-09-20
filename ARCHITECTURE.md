@@ -79,7 +79,7 @@ agent framework:
 - **[Pi](https://pi.dev/)** (`@earendil-works/pi-coding-agent`)
   — the agent harness. It owns the **inner loop**: within a single turn, *model → tool call →
   observe result → repeat → final answer*, plus session lifecycle and token streaming. Argus
-  registers its 12 domain tools with Pi and drives Pi sessions; it does not reimplement this
+  registers its 13 domain tools with Pi and drives Pi sessions; it does not reimplement this
   per-turn loop.
 - **[Ollama](https://ollama.com)** — serves the local LLM the agent reasons with (`OLLAMA_BASE_URL` / `OLLAMA_MODEL`).
 - **[Bun](https://bun.sh)** — runtime for the server and the demo services.
@@ -201,12 +201,12 @@ re-investigating from scratch. The agent's judgment is informed by past state, n
 signals, and the prompt explicitly tells it to verify current evidence before assuming the same
 fix applies.
 
-### 3.3 The toolbelt (12 tools)
+### 3.3 The toolbelt (13 tools)
 
 The agent's only access to the world is its tools. It never writes raw SQL or invents
 metric values:
 
-`get_alert` · `list_active_alerts` · `check_service_health` · `check_logs` ·
+`get_alert` · `list_active_alerts` · `list_all_alerts` · `check_service_health` · `check_logs` ·
 `get_recent_deployments` · `search_runbooks` · `create_incident` · `update_incident` ·
 `list_incidents` · `notify_channel` · `request_confirmation` · `execute_runbook_step`
 
@@ -417,7 +417,7 @@ argus-server/        Bun server (TypeScript): agent, reconciler, REST API, scrap
   service-url.ts     resolves demo-service base URLs (localhost vs compose DNS, SERVICE_DNS)
   metrics.ts         Prometheus exposition for the agent's own model usage (GET /metrics)
   agent/             system prompt
-  tools/             the 12 agent tools (argus-tools.ts)
+  tools/             the 13 agent tools (argus-tools.ts)
   db/                schema.ts (tables + migrations), api.ts (all queries), types.ts (domain model)
   Dockerfile         multi-stage server image: builds the UI, then serves it + API + /ws on :3000
 argus-ui/            React + Vite display-only console (TypeScript, src/main.tsx, src/types.ts)
