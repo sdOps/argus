@@ -28,9 +28,9 @@ gateway → app-ui, app-api → auth, pgsql, redis
 Argus is the system assembled around off-the-shelf foundations. It is not a from-scratch agent
 framework. The original work is the operational control loop *around* the agent, not the harness.
 
-- **[Pi](https://github.com/earendil-works/pi-coding-agent)** (`@earendil-works/pi-coding-agent`) —
+- **[Pi](https://github.com/earendil-works/pi)** (`@earendil-works/pi-coding-agent`) —
   the agent harness. It runs the per-turn tool-calling loop (model → tool call → observe result →
-  repeat) and session lifecycle; Argus registers its 12 triage tools with Pi and drives the
+  repeat) and session lifecycle; Argus registers its 13 triage tools with Pi and drives the
   sessions. Configured under `.pi/agent/`.
 - **[Ollama](https://ollama.ai)** — serves the LLM the agent reasons with (local or cloud). It
   stays on the host, never in Docker.
@@ -208,7 +208,9 @@ These runbooks are curated, human-authored knowledge the agent consults. The mod
 |------|-------------|
 | `get_alert` | Get details of a specific alert |
 | `list_active_alerts` | List all currently firing alerts |
+| `list_all_alerts` | List all alerts, including resolved ones, for RCA and trend context |
 | `check_service_health` | Scrape live metrics from a service |
+| `check_logs` | Query infrastructure logs, metrics history, and vmalert status |
 | `create_incident` | Create an incident with triage findings |
 | `update_incident` | Update incident status or root cause |
 | `list_incidents` | List incidents by status |
