@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS incidents (
   root_cause_service_id INTEGER REFERENCES services(id),
   status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'investigating', 'mitigated', 'resolved')),
   runbook_used TEXT,
+  remediation_attempts INTEGER NOT NULL DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -124,6 +125,12 @@ function migrate(db: Database) {
   const svcCols = new Set((db.query("PRAGMA table_info(services)").all() as { name: string }[]).map(c => c.name));
   if (!svcCols.has("recovered_at")) {
     db.exec("ALTER TABLE services ADD COLUMN recovered_at TEXT");
+  }
+
+  // incidents.remediation_attempts — count of remediation attempts per incident (loop guard).
+  const incAttemptCols = new Set((db.query("PRAGMA table_info(incidents)").all() as { name: string }[]).map(c => c.name));
+  if (!incAttemptCols.has("remediation_attempts")) {
+    db.exec("ALTER TABLE incidents ADD COLUMN remediation_attempts INTEGER NOT NULL DEFAULT 0");
   }
 }
 

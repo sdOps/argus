@@ -40,15 +40,18 @@ steps:
 
   - id: 3
     title: Flush stale keys
-    action: executable
-    command: "docker compose exec redis sh -c 'redis-cli --scan --pattern \"stale:*\" | xargs redis-cli del'"
-    requires_confirmation: true
-    rollback: "No rollback — keys are already stale"
+    action: manual
+    instruction: >
+      If redis_memory_used_ratio > 0.90, Redis is under memory
+      pressure. Check for large keys or stale cache entries:
+      docker compose exec redis redis-cli INFO memory
+      To flush stale keys manually:
+      docker compose exec redis sh -c 'redis-cli --scan --pattern "stale:*" | xargs redis-cli del'
 
   - id: 4
     title: Restart Redis container
     action: executable
-    command: "docker compose restart redis"
+    target: redis
     requires_confirmation: true
     rollback: "Redeploy from source: docker compose up -d --build --no-deps redis"
 

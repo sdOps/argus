@@ -49,6 +49,7 @@ export interface IncidentRow {
   root_cause_service_id: number | null;
   status: IncidentStatus;
   runbook_used: string | null;
+  remediation_attempts: number;
   created_at: string;
   updated_at: string;
 }

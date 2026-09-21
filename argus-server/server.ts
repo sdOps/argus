@@ -41,6 +41,7 @@ import {
   listChat,
   deleteMessagesForClosedIncidents,
   isServiceInCooldown,
+  getIncidentRemediationAttempts,
 } from "./db/api.js";
 
 const APP_DIR = fileURLToPath(new URL(".", import.meta.url));
@@ -53,9 +54,15 @@ const DB_PATH = process.env.DB_PATH ? resolve(process.env.DB_PATH) : resolve(APP
 const PORT = Number.parseInt(process.env.PORT || "3000", 10);
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 const DISABLE_SCRAPER = process.env.DISABLE_SCRAPER === "1";
+// Maximum remediation attempts the control loop will allow per incident. After this the
+// loop stops enqueueing execution and leaves the incident open for operator direction.
+const REMEDIATION_ATTEMPT_CAP = Number.parseInt(process.env.REMEDIATION_ATTEMPT_CAP || "3", 10);
 // External/auto-resolved incidents: how long to WAIT for the operator to say how it was
 // resolved before falling back to a research-only RCA so the workflow never hangs.
 const RCA_OPERATOR_TIMEOUT_MS = Number.parseInt(process.env.RCA_OPERATOR_TIMEOUT_SEC || "180", 10) * 1000;
+// URL of the dedicated remediation executor. Native modes leave this unset; the execute tool
+// refuses rather than pretending it can restart containers.
+const EXECUTOR_URL = process.env.EXECUTOR_URL?.trim() || null;
 
 // ── Logging ──
 
@@ -638,7 +645,11 @@ function computeWorkflows(): Workflow[] {
   }
 
   const isClosed = (inc: IncidentRow | null | undefined): boolean =>
-    !!inc && (inc.status === "resolved" || inc.status === "mitigated");
+    !!inc && inc.status === "resolved";
+  // mitigated is intentionally NOT closed here: a mitigated incident with firing alerts is in
+  // the verifying/cooldown window and should keep owning the service's alerts. Once the
+  // detection path resolves them, the incident moves to resolved and a fresh failure can
+  // open a new workflow.
 
   const workflows: Workflow[] = [];
   // Services with an open (non-closed) incident — their firing alerts belong to that
@@ -802,7 +813,7 @@ function investigatePrompt(service: string, summary: string): string {
   return `A new alert has fired for ${service}${summary ? `: ${summary}` : ""}. Investigate now without waiting: correlate the active alerts across services, check ${service} and its dependencies, review recent deployments and runbooks, then create an incident (create_incident) with a likely_cause and root_cause_service. Notify the channel, then propose the remediation step with request_confirmation and STOP — the operator approves in the UI. Do not execute remediation yourself.${history}`;
 }
 function executePrompt({ service, incidentId, confirmationId, action }: { service: string; incidentId: number; confirmationId: number; action: string }): string {
-  return `The operator APPROVED the remediation for incident #${incidentId} (${service}) — confirmation #${confirmationId}${action ? `: "${action}"` : ""}. Execute it now by calling execute_runbook_step with incident_id ${incidentId}, confirmation_id ${confirmationId}, service "${service}", the step_id, and the command you proposed${action ? ` ("${action}")` : ""}. After it returns, briefly confirm what you ran and that the alerts are clearing.`;
+  return `The operator APPROVED the remediation for incident #${incidentId} (${service}) — confirmation #${confirmationId}${action ? `: "${action}"` : ""}. Execute it now by calling execute_runbook_step with incident_id ${incidentId}, confirmation_id ${confirmationId}, service "${service}", and the step_id you proposed${action ? ` ("${action}")` : ""}. After it returns, briefly confirm what you ran and that the alerts are clearing.`;
 }
 // Remediation Argus ran itself — it knows the cause and the fix, so it writes the RCA directly.
 function rcaRemediatedPrompt({ service, incidentId }: { service: string; incidentId: number }): string {
@@ -856,10 +867,12 @@ function reconcileTriage() {
       // (The investigation transcript is linked to this incident at create_incident time via
       //  linkInvestigationToIncident — see the tool_execution_end handler.)
 
-      // 2) Execute: approval on record, agent hasn't run the fix yet (not mitigated), alerts firing.
-      //    Re-derivable after a restart → durable. Guarded once per confirmation per run.
+      // 2) Execute: approval on record, incident not mitigated/resolved, alerts firing,
+      //    and we have not hit the per-incident remediation attempt cap.
+      const attemptCapHit = getIncidentRemediationAttempts(db, inc.id) >= REMEDIATION_ATTEMPT_CAP;
       if (approved && inc.status !== "mitigated" && inc.status !== "resolved"
-          && wf.firing_alerts.length > 0 && !autoTriage.executed.has(approved.id)) {
+          && wf.firing_alerts.length > 0 && !autoTriage.executed.has(approved.id)
+          && !attemptCapHit) {
         autoTriage.executed.add(approved.id);
         enqueueAgentTask({
           workflowId: wf.id,
@@ -868,6 +881,14 @@ function reconcileTriage() {
           prompt: executePrompt({ service: wf.service_name, incidentId: inc.id, confirmationId: approved.id, action: approved.action }),
         });
         log("info", "triage", `Execute enqueued for incident ${inc.id} (${wf.service_name}) [${wf.id}]`);
+      } else if (attemptCapHit && approved && !autoTriage.executed.has(approved.id)) {
+        autoTriage.executed.add(approved.id);
+        log("warn", "triage", `Skipping execution for incident ${inc.id}: remediation attempt cap (${REMEDIATION_ATTEMPT_CAP}) reached`);
+        const wid = `inc-${inc.id}`;
+        const note = `⏸ Remediation attempt cap (${REMEDIATION_ATTEMPT_CAP}) reached for incident #${inc.id}. Execution stopped pending operator direction.`;
+        try { insertMessage(db, { thread_key: wid, role: "system", content: note, auto: 1 }); }
+        catch (e) { log("warn", "triage", `Could not persist cap note: ${getErrorMessage(e)}`); }
+        broadcast({ type: "system_note", workflowId: wid, content: note });
       }
 
       // 3) RCA: resolved incident with no RCA written yet.

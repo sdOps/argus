@@ -5,11 +5,10 @@ demo microservices stack, and when services degrade it investigates, opens an in
 proposes a fix, waits for a human to approve, executes the remediation, and writes a
 root-cause analysis, mostly on its own.
 
-It is a **demo / reference system, not a product**. The failure scenarios are scripted, the
-runbook "commands" hit mock `/recover` endpoints, and a single sequential agent session
-won't scale to a real org's alert volume. What it _is_ meant to be is an honest, working
-illustration of how to wire an LLM agent into an operational control loop, and more specifically
-of **where such a system needs determinism and where it needs judgment.**
+It is a **demo / reference system, not a product**. The failure scenarios are scripted, and a
+single sequential agent session won't scale to a real org's alert volume. What it _is_ meant to
+be is an honest, working illustration of how to wire an LLM agent into an operational control
+loop, and more specifically of **where such a system needs determinism and where it needs judgment.**
 
 That boundary is the thesis of this document.
 
@@ -35,6 +34,10 @@ graph TB
     db[(SQLite)]
   end
 
+  subgraph executor["argus-executor — Docker only"]
+    ex[POST /execute]
+  end
+
   ui[argus-ui — React/Vite, :5173]
 
   demo -- GET /metrics --> scr
@@ -44,7 +47,8 @@ graph TB
   rec -- reads desired state --> db
   rec -- enqueues tasks --> ag
   ag -- tool calls --> db
-  ag -- POST /recover --> demo
+  ag -- POST /execute --> ex
+  ex -- docker restart --> demo
   rest --> db
   ui -- poll /api/workflows, /api/chat --> rest
   rest -- WS broadcast (tagged by workflowId) --> ui
@@ -54,6 +58,7 @@ graph TB
 |---|---|---|---|
 | **argus-server** | Bun | 3000 | Headless agent, reconciler, REST API, alert scraper, WebSocket |
 | **argus-ui** | React + Vite | 5173 | Display-only triage console (pipeline, incidents, chat) |
+| **argus-executor** | Bun + Docker CLI | 3001 | Dedicated remediation worker: the only container with Docker socket access |
 | **demo-services** | Bun | 8081–8086 | Six mock services with `GET /metrics`, `POST /fail`, `POST /recover` |
 | **infra** | Docker Compose | — | VictoriaMetrics + vmalert + Alertmanager (optional alert source) |
 | **runbooks/** | YAML | — | Per-service triggers, steps, known failure patterns |
@@ -226,8 +231,10 @@ without a human approval on record.** The flow:
    row to `approved`. That's all the endpoint does; the approval is now durable.
 3. The reconciler sees `approved + not mitigated + alerts firing` and enqueues execution.
 4. The agent calls `execute_runbook_step`, which **re-checks the gate** (refuses unless the
-   confirmation is `approved`), then performs the real recovery: `POST /recover` on the
-   affected services, resolves their alerts, marks the incident mitigated.
+   confirmation is `approved`), looks up the typed runbook step (`action: executable`, `target`),
+   validates the target against the executor allowlist, and routes the real container restart
+   through `argus-executor`. It polls the service until metrics verify healthy, then marks the
+   incident `mitigated`. Alert resolution is left to the detection path.
 
 The gate is enforced in two independent places: the UI flow and the tool itself. The agent cannot talk itself past it.
 
@@ -326,15 +333,21 @@ The line between deterministic code and the LLM is the thing to take from this a
 | Deciding *when* to act (reconciler) | Diagnosing the root cause |
 | Computing workflow / pipeline state | Proposing a remediation step |
 | Enforcing the approval gate | Writing the incident + RCA narrative |
-| Performing the DB writes & `/recover` call | Asking the operator the right question |
+| Performing the typed container restart via `argus-executor` | Asking the operator the right question |
 | Persisting transcript & aliasing threads | Judgment under ambiguity |
 | Shipping & indexing logs (future) | Reading a log line and deciding what it means |
 
-Detection, scheduling, state, and safety are **mechanism**: they must be predictable, so they
-are code. Correlation, diagnosis, and explanation are **judgment**: they benefit from a model.
-Keeping the model out of the control loop's mechanics is what makes an autonomous agent safe to
-run unattended. Not everything splits that cleanly; the last row in the table straddles the
-boundary, and that's where the interesting design questions live.
+The remediation row is the important one for the safety argument: the model names a
+pre-approved runbook step, but deterministic code decides what that step maps to, validates
+the target against an allowlist, and routes the real container restart through a dedicated
+executor that owns the Docker socket. The model never supplies a raw command string, and the
+executor validates independently even of `argus-server`.
+
+The three primed scenarios (`db`, `cache`, `auth`) exercise the control loop against
+runbooks that pre-map symptoms to root causes. The `api-oom` scenario is different:
+`app-api` fails directly, with no upstream cause and no matching `known_patterns` entry,
+so the agent must reason from live metrics and runbook steps without the shortcut.
+That is the unprimed case, and it is what tests the judgment side of the boundary.
 
 ### 7.1 Instrumenting the agentic side
 
@@ -400,12 +413,18 @@ All access goes through `argus-server/db/api.ts`; tools and handlers never embed
 
 - Failure scenarios are **scripted** (`POST /fail` / `POST /recover`); this is not chaos
   engineering.
-- Remediation is **simulated** against mock endpoints. No real infrastructure is touched.
+- The full **container restart** remediation path only runs under `docker compose up` /
+  `mise run infra:up`, where an `argus-executor` container owns the Docker socket. In native
+  modes (`mise run dev`, `mise run infra:start`) there are no containers to restart, so
+  `execute_runbook_step` refuses rather than simulating.
 - A single session won't handle **production alert volume**; this is an architecture demo.
 - Autonomy **requires the model to be reachable** (Ollama in dev); if it's down, detection and
   state still work, but triage pauses (the reconciler no-ops until the agent is up).
 - Narrow restart edge: if the server restarts in the seconds between an investigation finishing
   and the incident being aliased, that one transcript can stay under the pending thread.
+
+The `POST /recover` endpoints remain on the demo services for manual resets and the `recover`
+demo scenario; the agent no longer calls them.
 
 ---
 
