@@ -12,7 +12,6 @@ import {
   updateServiceStatus,
   listActiveAlerts,
   listAllAlerts,
-  resolveAlert,
   createIncident,
   getIncident,
   updateIncident,
@@ -23,6 +22,8 @@ import {
   createNotification,
   createConfirmation,
   markServiceRecovered,
+  getIncidentRemediationAttempts,
+  incrementIncidentRemediationAttempts,
 } from "../db/api.js";
 
 let db!: Database;
@@ -366,12 +367,11 @@ const requestConfirmationTool = defineTool({
 const executeRunbookStepTool = defineTool({
   name: "execute_runbook_step",
   label: "Execute Runbook Step",
-  description: `Execute a specific runbook step after the operator has APPROVED the confirmation. You MUST call request_confirmation first and only call this once approval is on record. This actually performs the remediation: it recovers the affected service(s) and clears their firing alerts.`,
+  description: `Execute an approved runbook remediation step. You MUST call request_confirmation first and only call this once approval is on record. The step is identified by service and step_id; the actual command is read from the runbook by deterministic code, not taken from you. After it runs, the tool verifies the target service is healthy and reports what it observed; alert resolution is left to the normal detection path.`,
   parameters: Type.Object({
     incident_id: Type.Number({ description: "The incident ID" }),
     step_id: Type.Number({ description: "The runbook step ID to execute" }),
-    service: Type.String({ description: "Service name the step is for" }),
-    command: Type.String({ description: "The command to execute" }),
+    service: Type.String({ description: "Service name the runbook belongs to" }),
     confirmation_id: Type.Number({ description: "The confirmation ID from request_confirmation" }),
   }),
   executionMode: "sequential",
@@ -386,75 +386,106 @@ const executeRunbookStepTool = defineTool({
         return toolResult({ error: `Confirmation ${params.confirmation_id} is "${confirmation.status || "pending"}", not approved. You may only execute after the operator approves in the UI.` });
       }
 
-      // Build the set of services to recover: the step's target, the incident's
-      // root-cause service, and any services with alerts correlated to the incident.
-      const recoverIds = new Set<number>();
-      const targetSvc = params.service ? getService(db, params.service) : null;
-      if (targetSvc) recoverIds.add(targetSvc.id);
+      // Loop guard: cap remediation attempts per incident.
+      const attempts = getIncidentRemediationAttempts(db, params.incident_id);
+      const cap = remediationAttemptCap();
+      if (attempts >= cap) {
+        const msg = `Remediation attempt cap (${cap}) reached for incident ${params.incident_id}. The incident stays open pending operator direction.`;
+        createNotification(db, { incident_id: params.incident_id, channel: "#platform-engineering", message: msg });
+        return toolResult({ error: msg, incident_id: params.incident_id, attempts, cap });
+      }
 
-      const incident = getIncident(db, params.incident_id);
-      if (incident?.root_cause_service_id) recoverIds.add(incident.root_cause_service_id);
+      // Native modes have no Docker topology; refuse rather than pretend.
+      const executorUrl = executorBaseUrl();
+      if (!executorUrl) {
+        return toolResult({
+          error: "No remediation executor is configured. Container restart only works in the full Docker topology (`docker compose up`). In native mode, resolve the failure manually and the scraper/Alertmanager path will clear the alerts.",
+          incident_id: params.incident_id,
+        });
+      }
 
-      for (const a of getIncidentAlerts(db, params.incident_id)) recoverIds.add(a.service_id);
+      // Load the runbook and step. Deterministic code, not the model, decides what runs.
+      const runbook = await loadRunbook(params.service);
+      if (!runbook) {
+        return toolResult({ error: `No runbook found for service "${params.service}".` });
+      }
+      const step = getRunbookStep(runbook, params.step_id);
+      if (!step) {
+        return toolResult({ error: `Step ${params.step_id} not found in ${params.service} runbook.` });
+      }
+      if (step.action !== "executable") {
+        return toolResult({ error: `Step ${params.step_id} in ${params.service} runbook is "${step.action}", not "executable". Only executable steps can be run through the executor.` });
+      }
+      const target = step.target;
+      if (!target || !EXECUTOR_ALLOWED_TARGETS.has(target)) {
+        return toolResult({ error: `Step ${params.step_id} targets "${target ?? "unknown"}", which is not in the remediation allowlist. Allowed targets: ${[...EXECUTOR_ALLOWED_TARGETS].join(", ")}.` });
+      }
 
-      const recovered: string[] = [];
-      const failed: string[] = [];
-      for (const sid of recoverIds) {
-        const svc = db.query("SELECT * FROM services WHERE id = ?").get(sid) as ServiceRow | null;
-        if (!svc) continue;
-        // Best-effort: heal the demo service so its metrics return to healthy.
-        try {
-          await fetch(`${serviceBaseUrl(svc)}/recover`, { method: "POST", signal: AbortSignal.timeout(2000) });
-        } catch { /* best effort — verified below regardless */ }
+      // Record that we are attempting remediation (atomic increment).
+      incrementIncidentRemediationAttempts(db, params.incident_id);
 
-        // Verify before declaring victory: poll /metrics until the service reads healthy
-        // (bounded). This catches a slow/failed /recover instead of silently assuming success,
-        // and means alerts are only cleared once metrics have actually settled — which (with
-        // the scraper's post-recovery cooldown) is what kills phantom re-detection.
-        const healthy = await pollUntilHealthy(svc, 8000, 750);
-        if (!healthy) {
-          failed.push(svc.name);
-          continue;
+      // Trigger the real container restart through the dedicated executor.
+      let executorOutput: string | null = null;
+      try {
+        const resp = await fetch(`${executorUrl}/execute`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "restart", target }),
+          signal: AbortSignal.timeout(120000),
+        });
+        const data = await resp.json() as Record<string, unknown>;
+        if (!resp.ok) {
+          const detail = typeof data.error === "string" ? data.error : JSON.stringify(data);
+          return toolResult({ error: `Executor refused: ${detail}`, incident_id: params.incident_id, step_id: params.step_id, service: params.service, target });
         }
-        recovered.push(svc.name);
-        // Stamp the cooldown so the scraper won't re-create alerts on a boundary reading.
-        markServiceRecovered(db, sid);
-        // Clear its firing alerts.
-        const firing = db.query("SELECT id FROM alerts WHERE service_id = ? AND status = 'firing'").all(sid) as { id: number }[];
-        for (const a of firing) resolveAlert(db, a.id);
+        executorOutput = typeof data.output === "string" ? data.output : null;
+      } catch (err) {
+        return toolResult({
+          error: `Failed to reach remediation executor at ${executorUrl}: ${err instanceof Error ? err.message : String(err)}`,
+          incident_id: params.incident_id,
+          attempts: getIncidentRemediationAttempts(db, params.incident_id),
+        });
       }
 
-      // Flip services with no remaining firing alerts back to healthy.
-      for (const s of db.query("SELECT id FROM services").all() as { id: number }[]) {
-        const cnt = db.query("SELECT COUNT(*) AS c FROM alerts WHERE service_id = ? AND status = 'firing'").get(s.id) as { c: number };
-        if (cnt.c === 0) {
-          db.query("UPDATE services SET status = 'healthy', last_checked = datetime('now') WHERE id = ?").run(s.id);
-        }
+      // Verify the restart had the intended effect before declaring the incident mitigated.
+      const targetSvc = getService(db, target);
+      if (!targetSvc) {
+        return toolResult({ error: `Target service "${target}" is not known to Argus.`, incident_id: params.incident_id });
+      }
+      const healthy = await pollUntilHealthy(targetSvc, 8000, 750);
+
+      if (!healthy) {
+        return toolResult({
+          error: `Restarted ${target}, but it did not return to healthy within the timeout — the incident remains open.`,
+          incident_id: params.incident_id,
+          step_id: params.step_id,
+          service: params.service,
+          target,
+          attempts: getIncidentRemediationAttempts(db, params.incident_id),
+          executor_output: executorOutput,
+        });
       }
 
-      // Only declare the incident mitigated when every targeted service verified healthy.
-      // If recovery didn't take, leave the incident open so the operator can retry.
-      if (failed.length === 0) {
-        updateIncident(db, { id: params.incident_id, status: "mitigated" });
-        // Auto-decline any other pending confirmations for this incident — the fix ran,
-        // so leftover proposals (e.g. from a declined-then-superseded suggestion) are moot.
-        db.query(
-          "UPDATE confirmations SET status = 'declined', resolved_at = datetime('now') WHERE incident_id = ? AND id != ? AND (status IS NULL OR status = 'pending')"
-        ).run(params.incident_id, params.confirmation_id);
-      }
+      // Success: stamp the cooldown so the scraper won't re-create alerts on a boundary reading.
+      markServiceRecovered(db, targetSvc.id);
 
-      const ok = failed.length === 0;
+      // Mark the incident mitigated. Alert resolution is intentionally left to the detection
+      // path (built-in scraper or vmalert → Alertmanager), not to this tool.
+      updateIncident(db, { id: params.incident_id, status: "mitigated" });
+
+      // Auto-decline any other pending confirmations for this incident — the fix ran.
+      db.query(
+        "UPDATE confirmations SET status = 'declined', resolved_at = datetime('now') WHERE incident_id = ? AND id != ? AND (status IS NULL OR status = 'pending')"
+      ).run(params.incident_id, params.confirmation_id);
+
       return toolResult({
         incident_id: params.incident_id,
         step_id: params.step_id,
         service: params.service,
-        command: params.command,
-        status: ok ? "executed" : "incomplete",
-        recovered_services: recovered,
-        failed_services: failed,
-        message: ok
-          ? `Executed "${params.command}". Verified ${recovered.join(", ") || "no"} service(s) returned to healthy and cleared their firing alerts.`
-          : `Executed "${params.command}" but ${failed.join(", ")} did not return to healthy within the timeout — alerts left firing and the incident remains open. The /recover may have failed; investigate and retry.`,
+        target,
+        status: "executed",
+        executor_output: executorOutput,
+        message: `Restarted ${target} via the executor and verified it returned to healthy. The incident is mitigated; alerts should clear through the normal detection path.`,
         timestamp: new Date().toISOString(),
       });
     } catch (err) { return toolError(err); }
@@ -620,7 +651,28 @@ Use this when you need historical context, metric trends, or infrastructure logs
 // ── Helpers ──
 
 interface RunbookTrigger { pattern: string; [k: string]: unknown }
-interface Runbook { service: string; triggers: RunbookTrigger[]; [k: string]: unknown }
+interface RunbookStep {
+  id: number;
+  title?: string;
+  action: string;
+  instruction?: string;
+  target?: string;
+  command?: string;
+  requires_confirmation?: boolean;
+  rollback?: string;
+  [k: string]: unknown;
+}
+interface Runbook { service: string; triggers: RunbookTrigger[]; steps: RunbookStep[]; [k: string]: unknown }
+
+const EXECUTOR_ALLOWED_TARGETS = new Set(["gateway", "app-ui", "app-api", "auth", "pgsql", "redis"]);
+const DEFAULT_REMEDIATION_ATTEMPT_CAP = 3;
+
+function remediationAttemptCap(): number {
+  const env = process.env.REMEDIATION_ATTEMPT_CAP;
+  if (!env) return DEFAULT_REMEDIATION_ATTEMPT_CAP;
+  const n = Number.parseInt(env, 10);
+  return Number.isNaN(n) || n < 1 ? DEFAULT_REMEDIATION_ATTEMPT_CAP : n;
+}
 
 async function loadAllRunbooks(): Promise<Runbook[]> {
   try {
@@ -636,6 +688,30 @@ async function loadAllRunbooks(): Promise<Runbook[]> {
   } catch {
     return [];
   }
+}
+
+async function loadRunbook(service: string): Promise<Runbook | null> {
+  try {
+    const files = await readdir(RUNBOOKS_DIR);
+    const file = files.find(f => f === `${service}.yaml` || f === `${service}.yml`);
+    if (!file) return null;
+    const content = await readFile(join(RUNBOOKS_DIR, file), "utf-8");
+    return parseYaml(content) as unknown as Runbook;
+  } catch {
+    return null;
+  }
+}
+
+function getRunbookStep(runbook: Runbook, stepId: number): RunbookStep | null {
+  if (!Array.isArray(runbook.steps)) return null;
+  return runbook.steps.find((s: RunbookStep) => s.id === stepId) || null;
+}
+
+// Resolve the base URL of the remediation executor. Native modes leave this unset;
+// the tool refuses to execute rather than pretending it can restart containers.
+function executorBaseUrl(): string | null {
+  const raw = process.env.EXECUTOR_URL?.trim();
+  return raw || null;
 }
 
 // Poll a service's /metrics until it reads healthy, or the bounded timeout elapses.

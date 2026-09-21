@@ -44,7 +44,7 @@ steps:
   - id: 4
     title: Restart auth container
     action: executable
-    command: "docker compose restart auth"
+    target: auth
     requires_confirmation: true
     rollback: "Redeploy from source: docker compose up -d --build --no-deps auth"
 

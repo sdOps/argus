@@ -43,7 +43,7 @@ steps:
   - id: 4
     title: Restart app-ui container
     action: executable
-    command: "docker compose restart app-ui"
+    target: app-ui
     requires_confirmation: true
     rollback: "Redeploy from source: docker compose up -d --build --no-deps app-ui"
 

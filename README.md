@@ -82,11 +82,13 @@ mise run dev              # server + UI + services, with bun --watch hot-reload
 ## Demo scenarios
 
 ```bash
-mise run infra:demo -- db       # database cascade
-mise run infra:demo -- cache    # redis eviction storm
-mise run infra:demo -- auth     # auth outage
-mise run infra:demo -- all      # everything fails
-mise run infra:demo -- recover  # restore all services
+mise run infra:demo -- db         # database cascade
+mise run infra:demo -- cache      # redis eviction storm
+mise run infra:demo -- auth       # auth outage
+mise run infra:demo -- frontend   # app-ui failure
+mise run infra:demo -- api-oom    # app-api crash, no runbook match
+mise run infra:demo -- all        # everything fails
+mise run infra:demo -- recover    # restore all services
 ```
 
 ## URLs
@@ -118,6 +120,12 @@ Each service exposes `GET /metrics` (Prometheus format), `POST /fail`, and `POST
 1. **Database cascade:** pgsql fails → app-api dependency errors → gateway upstream errors. Root cause: pgsql
 2. **Auth outage:** auth fails → token validation errors → app-api 401s → gateway errors. Root cause: auth
 3. **Cache eviction storm:** redis memory pressure → cache misses → app-api latency → pgsql pool exhaustion. Root cause: redis
+
+## The unprimed scenario (`api-oom`)
+
+`api-oom` fails the `app-api` process directly. The agent can read live metrics, check that `auth`, `pgsql`, and `redis` are healthy, and follow the `app-api` runbook steps, but the runbook's `known_patterns` all point to upstream dependencies. There is no named pattern for a direct app-api failure, so the agent has to reason without being handed the answer. Watch whether it proposes a sensible restart anyway, or whether it gets stuck looking for an upstream cause that does not exist.
+
+This is the scenario that tests the judgment side of the determinism boundary, not just the control loop.
 
 ## Prerequisites
 
@@ -172,8 +180,10 @@ Each monitored service has a YAML runbook in [`runbooks/services/`](runbooks/ser
 the operational knowledge an on-call engineer would reach for. A runbook declares:
 
 - **`triggers`** — the metrics and thresholds that signal trouble (e.g. `pgsql_connection_pool_used > 0.90`).
-- **`steps`** — ordered remediation steps, each typed `manual`, `executable` (with a `command`,
-  `requires_confirmation`, and a `rollback`), or `notify` (escalate to a channel).
+- **`steps`** — ordered remediation steps, each typed `manual`, `executable` (with a `target`
+  container, `requires_confirmation`, and a `rollback`), or `notify` (escalate to a channel).
+  The agent names a pre-approved step; deterministic code maps that to a typed action and
+  runs it through the executor. The model never supplies a raw command string.
 - **`known_patterns`** — named failure patterns that map a cluster of symptoms to a **root cause**.
   This is what lets the agent resolve a multi-service cascade to the one service actually at fault.
 - **`related_runbooks`** — links to dependent services' runbooks.
@@ -218,7 +228,7 @@ These runbooks are curated, human-authored knowledge the agent consults. The mod
 | `get_recent_deployments` | Check recent deployments |
 | `notify_channel` | Send notification to a Slack channel |
 | `request_confirmation` | Request human approval before remediation |
-| `execute_runbook_step` | Execute a remediation step after confirmation |
+| `execute_runbook_step` | Execute an approved, typed runbook step via the executor after verification |
 
 ## All mise tasks
 
@@ -238,3 +248,16 @@ These runbooks are curated, human-authored knowledge the agent consults. The mod
 > `infra:up`/`infra:down` wrap `docker compose` on the top-level `docker-compose.yml`.
 > The infra-only observability stack (for use with native services) remains
 > `infra/docker-compose.yml`, driven by `mise run infra:start`/`infra:stop`.
+
+## Remediation and the executor
+
+In the full Docker topology (`docker compose up` / `mise run infra:up`), approved
+remediation runs through a dedicated `argus-executor` container. The executor is the only
+component with access to `/var/run/docker.sock`; it accepts a typed `{ action, target }`
+request, validates the target against an allowlist of the six demo services, and restarts the
+real container. The agent never supplies a raw command string.
+
+In native modes (`mise run dev` and `mise run infra:start`) there are no containers to
+restart, so `execute_runbook_step` refuses with a clear message rather than pretending. The
+`/recover` endpoints on the demo services still work for manual resets and the `recover`
+demo scenario.

@@ -198,6 +198,16 @@ export function createDeployment(db: Database, { service_id, version, commit_sha
   return db.query("SELECT * FROM deployments WHERE id = ?").get(Number(result.lastInsertRowid)) as DeploymentRow;
 }
 
+export function getIncidentRemediationAttempts(db: Database, incidentId: number): number {
+  const row = db.query("SELECT remediation_attempts FROM incidents WHERE id = ?").get(incidentId) as { remediation_attempts: number } | null;
+  return row?.remediation_attempts ?? 0;
+}
+
+export function incrementIncidentRemediationAttempts(db: Database, incidentId: number): number {
+  db.query("UPDATE incidents SET remediation_attempts = remediation_attempts + 1, updated_at = datetime('now') WHERE id = ?").run(incidentId);
+  return getIncidentRemediationAttempts(db, incidentId);
+}
+
 // ── Notifications ──
 
 export function createNotification(db: Database, { incident_id, channel, message }: { incident_id: number; channel: string; message: string }): NotificationRow {

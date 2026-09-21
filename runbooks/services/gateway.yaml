@@ -36,7 +36,7 @@ steps:
   - id: 3
     title: Restart gateway container
     action: executable
-    command: "docker compose restart gateway"
+    target: gateway
     requires_confirmation: true
     rollback: "Redeploy from source: docker compose up -d --build --no-deps gateway"
 

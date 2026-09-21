@@ -51,7 +51,7 @@ steps:
   - id: 5
     title: Restart app-api container
     action: executable
-    command: "docker compose restart app-api"
+    target: app-api
     requires_confirmation: true
     rollback: "Redeploy from source: docker compose up -d --build --no-deps app-api"
 

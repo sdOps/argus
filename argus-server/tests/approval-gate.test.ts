@@ -56,9 +56,8 @@ describe("approval gate — execute_runbook_step", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (executeRunbookStep.execute as any)("test", {
       incident_id: incidentId,
-      step_id: 1,
+      step_id: 2,
       service: "pgsql",
-      command: "restart connection pool",
       confirmation_id: confirmationId,
     }, undefined, undefined);
 
@@ -74,9 +73,8 @@ describe("approval gate — execute_runbook_step", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (executeRunbookStep.execute as any)("test", {
       incident_id: incidentId,
-      step_id: 1,
+      step_id: 2,
       service: "pgsql",
-      command: "restart connection pool",
       confirmation_id: 9999,
     }, undefined, undefined);
 
@@ -91,9 +89,8 @@ describe("approval gate — execute_runbook_step", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (executeRunbookStep.execute as any)("test", {
       incident_id: incidentId,
-      step_id: 1,
+      step_id: 2,
       service: "pgsql",
-      command: "restart connection pool",
       confirmation_id: confirmationId,
     }, undefined, undefined);
 

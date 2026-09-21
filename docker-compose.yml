@@ -26,6 +26,7 @@ services:
   gateway:
     build: ./demo-services
     image: argus-demo-services
+    container_name: gateway
     command: ["bun", "demo-services/gateway.ts"]
     ports: ["8081:8081"]
     restart: unless-stopped
@@ -33,6 +34,7 @@ services:
   app-ui:
     build: ./demo-services
     image: argus-demo-services
+    container_name: app-ui
     command: ["bun", "demo-services/app-ui.ts"]
     ports: ["8082:8082"]
     restart: unless-stopped
@@ -40,6 +42,7 @@ services:
   app-api:
     build: ./demo-services
     image: argus-demo-services
+    container_name: app-api
     command: ["bun", "demo-services/app-api.ts"]
     ports: ["8083:8083"]
     restart: unless-stopped
@@ -47,6 +50,7 @@ services:
   auth:
     build: ./demo-services
     image: argus-demo-services
+    container_name: auth
     command: ["bun", "demo-services/auth.ts"]
     ports: ["8084:8084"]
     restart: unless-stopped
@@ -54,6 +58,7 @@ services:
   pgsql:
     build: ./demo-services
     image: argus-demo-services
+    container_name: pgsql
     command: ["bun", "demo-services/pgsql.ts"]
     ports: ["8085:8085"]
     restart: unless-stopped
@@ -61,6 +66,7 @@ services:
   redis:
     build: ./demo-services
     image: argus-demo-services
+    container_name: redis
     command: ["bun", "demo-services/redis.ts"]
     ports: ["8086:8086"]
     restart: unless-stopped
@@ -73,6 +79,18 @@ services:
       - ./infra/scripts:/app/scripts:ro
     command: ["bun", "scripts/mock-slack.js"]
     ports: ["8090:8090"]
+    restart: unless-stopped
+
+  # ── Remediation executor (the only container with Docker socket access) ──
+  argus-executor:
+    build: ./argus-executor
+    image: argus-executor
+    ports: ["3001:3001"]
+    environment:
+      EXECUTOR_PORT: "3001"
+      EXECUTOR_ALLOWLIST: "gateway,app-ui,app-api,auth,pgsql,redis"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
   # ── Observability stack ──
@@ -141,6 +159,11 @@ services:
       # How long to wait for an operator to explain an external/auto resolution before
       # Argus writes a research-only RCA (human-in-the-loop gate on the RCA).
       RCA_OPERATOR_TIMEOUT_SEC: "${RCA_OPERATOR_TIMEOUT_SEC:-180}"
+      # URL of the dedicated remediation executor. Native modes leave this unset; the tool
+      # refuses to execute rather than pretending it can restart non-existent containers.
+      EXECUTOR_URL: "http://argus-executor:3001"
+      # Maximum remediation attempts per incident before the control loop gives up.
+      REMEDIATION_ATTEMPT_CAP: "${REMEDIATION_ATTEMPT_CAP:-3}"
       # The one cross-boundary link: Ollama runs on the host, not in compose.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       OLLAMA_MODEL: "${OLLAMA_MODEL:-}"
