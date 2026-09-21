@@ -19,11 +19,11 @@ export function computeWorkflowStep(
   if (firingAlerts.length === 0) return "resolved";
   if (incident && incident.status === "resolved") return "resolved";
 
-  // Approved confirmation gate → executing (takes priority over mitigated)
-  if (approved.length > 0) return "executing";
-  // Incident mitigated but firing alerts remain → still executing (cooldown: metrics settling).
+  // Approved confirmation gate, and execution has not yet reported back → executing.
+  if (approved.length > 0 && incident?.status !== "mitigated") return "executing";
+  // Incident mitigated but firing alerts remain → verifying (cooldown: metrics settling).
   // If all alerts had resolved, we'd have returned "resolved" above.
-  if (incident && incident.status === "mitigated") return "executing";
+  if (incident && incident.status === "mitigated") return "verifying";
   if (pending.length > 0) return "confirmation";
 
   if (incident) {

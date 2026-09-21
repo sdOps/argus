@@ -43,8 +43,8 @@ describe("computeWorkflowStep — pipeline state machine", () => {
     expect(computeWorkflowStep([firing], incident({ status: "resolved" }), [])).toBe("resolved");
   });
 
-  test("incident mitigated + firing alerts → executing (cooldown: metrics still settling)", () => {
-    expect(computeWorkflowStep([firing], incident({ status: "mitigated" }), [])).toBe("executing");
+  test("incident mitigated + firing alerts → verifying (cooldown: metrics still settling)", () => {
+    expect(computeWorkflowStep([firing], incident({ status: "mitigated" }), [])).toBe("verifying");
   });
 
   test("approved confirmation → executing (approval gate cleared)", () => {
@@ -90,10 +90,11 @@ describe("computeWorkflowStep — pipeline state machine", () => {
     expect(computeWorkflowStep([firing], null, [])).toBe("detected");
   });
 
-  test("approved confirmation takes priority over mitigated status", () => {
-    // Both paths → "executing"; this confirms the order doesn't matter for that outcome.
+  test("approved confirmation on mitigated incident with firing alerts → verifying", () => {
+    // Once execution has reported back (status = mitigated), the presence of an approved
+    // confirmation no longer matters; we are waiting for alerts to clear.
     const r1 = computeWorkflowStep([firing], incident({ status: "mitigated" }), [confirmation("approved")]);
-    expect(r1).toBe("executing");
+    expect(r1).toBe("verifying");
   });
 
   test("one alert still firing = still active (partial recovery)", () => {
